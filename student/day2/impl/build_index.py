@@ -7,9 +7,9 @@ Day2 인덱싱 엔트리포인트
 import os, argparse, numpy as np
 from typing import List
 
-from kt_aivle.sub_agents.day2.impl.ingest import build_corpus, save_docs_jsonl
-from kt_aivle.sub_agents.day2.impl.embeddings import Embeddings
-from kt_aivle.sub_agents.day2.impl.store import FaissStore  # 제공됨
+from student.day2.impl.ingest import build_corpus, save_docs_jsonl
+from student.day2.impl.embeddings import Embeddings
+from student.day2.impl.store import FaissStore  # 제공됨
 
 
 def build_index(paths: List[str], index_dir: str, model: str | None = None, batch_size: int = 128):

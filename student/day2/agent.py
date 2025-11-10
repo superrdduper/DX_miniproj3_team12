@@ -15,10 +15,10 @@ from google.adk.models.lite_llm import LiteLlm
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 
-from kt_aivle.sub_agents.day2.impl.rag import Day2Agent
-from kt_aivle.sub_agents.common.writer import render_day2, render_enveloped
-from kt_aivle.sub_agents.common.schemas import Day2Plan
-from kt_aivle.sub_agents.common.fs_utils import save_markdown
+from student.day2.impl.rag import Day2Agent
+from student.common.writer import render_day2, render_enveloped
+from student.common.schemas import Day2Plan
+from student.common.fs_utils import save_markdown
 
 
 # ------------------------------------------------------------------------------
