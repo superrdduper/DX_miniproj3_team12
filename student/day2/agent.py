@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Day2: RAG 도구 에이전트
+Day2: RAG 도구 에이전트 (강사용/답지 버전)
 - 역할: Day2 RAG 본체 호출 → 결과 렌더 → 저장(envelope) → 응답
+- 주의: 학생용 파일의 TODO 마커/설명은 유지했고, 아래에 '정답 구현'을 채워 넣었습니다.
 """
 
 from __future__ import annotations
@@ -25,7 +26,8 @@ from student.common.fs_utils import save_markdown
 # TODO[DAY2-A-01] 모델 선택
 #  - LiteLlm(model="openai/gpt-4o-mini") 등 경량 모델 지정
 # ------------------------------------------------------------------------------
-MODEL = LiteLlm(model="openai/gpt-4o-mini")  # 예: MODEL = LiteLlm(model="openai/gpt-4o-mini")
+# 정답 구현:
+MODEL = LiteLlm(model="openai/gpt-4o-mini")
 
 
 def _handle(query: str) -> Dict[str, Any]:
@@ -36,14 +38,23 @@ def _handle(query: str) -> Dict[str, Any]:
     """
     # ----------------------------------------------------------------------------
     # TODO[DAY2-A-02] 구현 지침
-    #  - plan = Day2Plan()
     #  - index_dir = os.getenv("DAY2_INDEX_DIR", "indices/day2")
-    #  - agent = Day2Agent(index_dir=index_dir)
+    #  - plan = Day2Plan(index_dir=index_dir)
+    #  - agent = Day2Agent()
     #  - payload = agent.handle(query, plan); return payload
     # ----------------------------------------------------------------------------
-    plan = Day2Plan()  # 필요 시 Day2Plan(top_k=5, ...) 형태로 조정
+    # 정답 구현:
     index_dir = os.getenv("DAY2_INDEX_DIR", "indices/day2")
-    agent = Day2Agent(index_dir=index_dir)
+    plan = Day2Plan(
+        index_dir=index_dir,
+        min_score=0.2,
+        min_mean_topk=0.2,
+        return_draft_when_enough=True,
+        force_rag_only=False,      # 강제로 RAG만 쓰고 싶으면 True
+        top_k=5,
+        max_context=1200,
+    )
+    agent = Day2Agent()
     payload = agent.handle(query, plan)
     return payload
 
@@ -67,48 +78,31 @@ def before_model_callback(
     #  - query = last.parts[0].text
     #  - payload → 렌더/저장/envelope → 응답
     # ----------------------------------------------------------------------------
+    # 정답 구현:
     try:
-        # 1) 사용자 쿼리 추출 (최신 사용자 메시지 기준)
-        if not llm_request.contents:
-            raise ValueError("요청에 contents가 비어 있습니다.")
         last = llm_request.contents[-1]
-        if not last.parts or not getattr(last.parts[0], "text", None):
-            raise ValueError("사용자 메시지에서 텍스트를 찾지 못했습니다.")
-        query: str = last.parts[0].text
+        if last.role == "user":
+            query = last.parts[0].text
+            payload = _handle(query)
 
-        # 2) Day2 RAG 본체 호출
-        payload = _handle(query)
+            body_md = render_day2(query, payload)
+            saved = save_markdown(query=query, route="day2", markdown=body_md)
+            md = render_enveloped(kind="day2", query=query, payload=payload, saved_path=saved)
 
-        # 3) 본문 렌더
-        body_md = render_day2(query, payload)
-
-        # 4) 파일 저장
-        saved = save_markdown(query, "day2", body_md)
-
-        # 5) envelope 렌더
-        md = render_enveloped("day2", query, payload, saved)
-
-        # 6) LlmResponse로 반환
-        return LlmResponse(
-            contents=[
-                types.Content(
+            return LlmResponse(
+                content=types.Content(
+                    parts=[types.Part(text=md)],
                     role="model",
-                    parts=[types.Part.from_text(md)],
                 )
-            ]
-        )
-
+            )
     except Exception as e:
-        # 예외 발생 시 간단 안내 메시지 반환
-        fallback = f"요청을 처리하는 중 오류가 발생했습니다: {e}"
         return LlmResponse(
-            contents=[
-                types.Content(
-                    role="model",
-                    parts=[types.Part.from_text(fallback)],
-                )
-            ]
+            content=types.Content(
+                parts=[types.Part(text=f"Day2 에러: {e}")],
+                role="model",
+            )
         )
+    return None
 
 
 day2_rag_agent = Agent(
@@ -119,4 +113,3 @@ day2_rag_agent = Agent(
     tools=[],
     before_model_callback=before_model_callback,
 )
-

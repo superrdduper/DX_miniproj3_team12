@@ -84,7 +84,7 @@ def _handle(query: str) -> Dict[str, Any]:
 # ------------------------------------------------------------------------------
 def before_model_callback(
     callback_context: CallbackContext,
-    llm_request: LlmRequest
+    llm_request: LlmRequest,
     **kwargs,
 ) -> Optional[LlmResponse]: 
     try:
@@ -113,12 +113,20 @@ def before_model_callback(
         )
 
         # 6️⃣ 최종 응답 객체 반환
-        return LlmResponse.from_envelope(envelope)
+        content = types.Content(
+            role="model",
+            parts=[types.Part(text=envelope)]
+        )
+        return LlmResponse(content=content)
 
     except Exception as e:
         # 예외 처리: 오류 메시지를 간단히 반환
         error_msg = f"Day3 에러 발생: {e}"
-        return LlmResponse.from_text(error_msg)
+        content = types.Content(
+            role="model",
+            parts=[types.Part(text=error_msg)]
+        )
+        return LlmResponse(content=content)
 
 # ------------------------------------------------------------------------------
 # TODO[DAY3-A-04] 에이전트 메타데이터:
