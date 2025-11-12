@@ -151,6 +151,7 @@ def build_corpus(paths_or_dir: List[str]) -> List[Dict[str, Any]]:
     """
     CSV/JSON 문서에서 자연어 코퍼스 생성
     반환: [{"id":..., "text":..., "meta":{"path":..., "chunk":..., "fields":...}}, ...]
+    - text 필드에는 '공모전명' + '상세 내용' + '전공 우대'를 포함하여 임베딩 품질 향상
     """
     docs = load_documents(paths_or_dir)
     corpus: List[Dict[str, Any]] = []
@@ -159,28 +160,31 @@ def build_corpus(paths_or_dir: List[str]) -> List[Dict[str, Any]]:
         try:
             record = json.loads(d["text"]) if isinstance(d["text"], str) else d["text"]
         except Exception:
-            record = {"내용": d["text"]}
+            record = {"공모전명": d["text"], "상세 내용": "", "전공 우대": ""}
 
-        # ✅ 자연어 문장으로 합치기
-        parts = []
-        for k, v in record.items():
-            if v not in [None, "", "NaN"]:
-                parts.append(f"{k}: {v}")
-        text_natural = ", ".join(parts)
+        # ✅ 임베딩 텍스트 구성: 공모전명 + 상세 내용 + 전공 우대
+        title = str(record.get("공모전명", "")).strip()
+        desc = str(record.get("상세 내용", "")).strip()
+        major = str(record.get("전공 우대", "")).strip()
 
-        # ✅ 여기서 분야, 주최 등 주요 단어를 임베딩에 포함
-        chunks = chunk_text(text_natural)
+        # 결합 순서: 공모전명 → 상세내용 → 전공우대
+        text_parts = [p for p in [title, desc, f"(전공 우대: {major})" if major else ""] if p]
+        text_for_embedding = ". ".join(text_parts) if text_parts else f"(제목 없음) from {d['path']}"
+
+        # ✅ 청크 분할 (길 경우 여러 청크로)
+        chunks = chunk_text(text_for_embedding)
         for i, ch in enumerate(chunks):
             cid = f"{d['path']}::chunk_{i:04d}"
             corpus.append({
                 "id": cid,
-                "text": ch,  # 임베딩 대상
+                "text": ch,  # ✅ 공모전명 + 상세내용 + 전공우대 포함
                 "meta": {
                     "path": d["path"],
                     "chunk": i,
-                    "fields": record
+                    "fields": record  # 원본 필드 전체 저장
                 }
             })
+
     return corpus
 
 def save_docs_jsonl(items: List[Dict[str, Any]], out_path: str):

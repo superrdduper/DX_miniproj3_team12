@@ -148,15 +148,21 @@ def render_day3(query: str, payload: Dict[str, Any]) -> str:
 
 def render_day5(query: str, payload: dict) -> str:
     """
-    Day5 공모전 RAG 검색 결과 렌더링
-    - 사용자 질의 표시
-    - 추천 공모전 표 형식 (실제 컬럼 구조 반영)
-    - 상세 정보 섹션
+    Day5 공모전 RAG 검색 결과 렌더링 (payload 기반)
+    - meta.fields의 모든 컬럼을 자동 탐색하여 출력
+    - 최대 10행까지만 표시
     """
     lines = []
     lines.append("# 🎯 Day5 – 공모전 추천 결과")
     lines.append("")
     lines.append(f"**검색 질의:** {query}")
+    lines.append("")
+
+    # ── 게이팅 상태
+    gating = (payload or {}).get("gating", {})
+    lines.append(f"- **게이팅 상태:** {gating.get('status','unknown')}")
+    lines.append(f"- **최상위 점수:** {gating.get('top_score',0.0):.3f}")
+    lines.append(f"- **평균 상위 K 매칭도:** {gating.get('mean_topk',0.0):.3f}")
     lines.append("")
 
     # ── 초안 요약 (있는 경우)
@@ -167,122 +173,76 @@ def render_day5(query: str, payload: dict) -> str:
         lines.append(answer.strip())
         lines.append("")
 
-    # ── 공모전 추천 목록 (Top-K)
+    # ── 추천 공모전 목록 (모든 컬럼 자동)
     contexts = (payload or {}).get("contexts") or []
     if contexts:
-        lines.append("## 📋 추천 공모전 목록")
-        lines.append("")
-        lines.append("| 순위 | 공모전명 | 주최 | 분야 | 참가자격 | 마감일 | 매칭도 | 추천 근거 |")
-        lines.append("|:---:|----------|------|------|----------|--------|:------:|-----------|")
-        
-        for i, c in enumerate(contexts, 1):
-            # 매칭 점수
-            score = float(c.get('score', 0.0))
-            match_pct = f"{score*100:.1f}%"
-            
-            # 원본 텍스트에서 공모전 정보 파싱
-            raw_text = (
-                c.get("text")
-                or c.get("chunk")
-                or c.get("content")
-                or ""
-            )
-            
-            # 텍스트에서 각 필드 추출
-            def extract_field(text: str, field_name: str) -> str:
-                """[필드명]: 형식에서 값 추출"""
-                import re
-                pattern = rf'\[{field_name}\]:\s*(.+?)(?=\n\[|$)'
-                match = re.search(pattern, text, re.DOTALL)
-                if match:
-                    return match.group(1).strip().replace('\n', ' ')[:50]
-                return "-"
-            
-            contest_name = extract_field(raw_text, "공모전명")
-            host = extract_field(raw_text, "주최")
-            field = extract_field(raw_text, "분야")
-            eligibility = extract_field(raw_text, "참가 자격")
-            deadline = extract_field(raw_text, "마감일")
-            
-            # 추천 근거: 상세 내용 또는 전공 우대 부분
-            detail = extract_field(raw_text, "상세 내용")
-            if len(detail) > 80:
-                detail = detail[:80] + "..."
-            
-            lines.append(
-                f"| {i} | {contest_name} | {host} | {field} | {eligibility} | {deadline} | {match_pct} | {detail} |"
-            )
+        lines.append("## 📋 추천 공모전 목록 (최대 10개)")
         lines.append("")
 
-    # ── 상위 추천 공모전 상세 (Top 3)
-    if contexts and len(contexts) > 0:
-        lines.append("## 📌 상위 추천 공모전 상세")
+        # 모든 컬럼 추출 (메타필드 기반)
+        all_fields = set()
+        for c in contexts:
+            fields = (c.get("meta", {}) or {}).get("fields", {}) or {}
+            all_fields.update(fields.keys())
+        all_fields = list(all_fields)
+
+        # 기본 컬럼 우선 정렬 (보기 좋게)
+        priority = ["공모전명", "주최", "분야", "상금(단위: 만 원)", "마감일", "참가 자격", "팀 규모", "전공 우대", "상세 내용"]
+        ordered_fields = [f for f in priority if f in all_fields] + [f for f in all_fields if f not in priority]
+
+        # 표 헤더 생성
+        headers = ["순위", "매칭도"] + ordered_fields
+        lines.append("| " + " | ".join(headers) + " |")
+        lines.append("|" + "|".join([":---:"] * len(headers)) + "|")
+
+        # 표 내용 (최대 10개)
+        for i, c in enumerate(contexts[:10], 1):
+            score = f"{float(c.get('score', 0.0))*100:.1f}%"
+            fields = (c.get("meta", {}) or {}).get("fields", {}) or {}
+            row_values = []
+            for key in ordered_fields:
+                val = fields.get(key, "-")
+                if isinstance(val, float) and (val != val):  # NaN 처리
+                    val = "-"
+                text_val = str(val).strip().replace("\n", " ")
+                if len(text_val) > 80:
+                    text_val = text_val[:80] + "…"
+                row_values.append(text_val)
+            lines.append(f"| {i} | {score} | " + " | ".join(row_values) + " |")
         lines.append("")
-        
+
+    # ── 상위 3개 공모전 상세
+    if contexts:
+        lines.append("## 📌 상위 추천 공모전 상세 (Top 3)")
+        lines.append("")
         for i, c in enumerate(contexts[:3], 1):
-            score = float(c.get('score', 0.0))
-            
-            # 원본 텍스트
-            raw_text = (
-                c.get("text")
-                or c.get("chunk")
-                or c.get("content")
-                or ""
-            )
-            
-            # 필드 추출 함수 (상세용)
-            def extract_field_detail(text: str, field_name: str) -> str:
-                """[필드명]: 형식에서 값 추출 (전체)"""
-                import re
-                pattern = rf'\[{field_name}\]:\s*(.+?)(?=\n\[|$)'
-                match = re.search(pattern, text, re.DOTALL)
-                if match:
-                    return match.group(1).strip()
-                return "-"
-            
-            contest_name = extract_field_detail(raw_text, "공모전명")
-            host = extract_field_detail(raw_text, "주최")
-            field = extract_field_detail(raw_text, "분야")
-            eligibility = extract_field_detail(raw_text, "참가 자격")
-            team_size = extract_field_detail(raw_text, "팀 규모")
-            deadline = extract_field_detail(raw_text, "마감일")
-            prize = extract_field_detail(raw_text, "상금 및 혜택")
-            preferred_major = extract_field_detail(raw_text, "전공 우대")
-            detail = extract_field_detail(raw_text, "상세 내용")
-            
-            lines.append(f"### {i}. {contest_name}")
+            score = float(c.get("score", 0.0))
+            fields = (c.get("meta", {}) or {}).get("fields", {}) or {}
+            title = fields.get("공모전명", f"공모전 #{i}")
+            lines.append(f"### {i}. {title}")
+            lines.append(f"**매칭도:** {score*100:.1f}%")
             lines.append("")
-            lines.append(f"**매칭도:** {score*100:.1f}% | **마감일:** {deadline}")
-            lines.append("")
-            
-            # 핵심 정보 표
             lines.append("| 항목 | 내용 |")
             lines.append("|------|------|")
-            lines.append(f"| 주최 | {host} |")
-            lines.append(f"| 분야 | {field} |")
-            lines.append(f"| 참가 자격 | {eligibility} |")
-            lines.append(f"| 팀 규모 | {team_size} |")
-            lines.append(f"| 상금 및 혜택 | {prize} |")
-            lines.append(f"| 전공 우대 | {preferred_major} |")
+            for k, v in fields.items():
+                if isinstance(v, float) and (v != v):
+                    v = "-"
+                text_val = str(v).strip().replace("\n", " ")
+                if len(text_val) > 200:
+                    text_val = text_val[:200] + "…"
+                lines.append(f"| {k} | {text_val} |")
             lines.append("")
-            
-            # 상세 내용
-            if detail and detail != "-":
-                lines.append("**📝 상세 내용**")
-                lines.append("")
-                lines.append(detail)
-                lines.append("")
-            
             lines.append("---")
             lines.append("")
 
     # ── 검색 통계
-    if contexts:
+    stats = (payload or {}).get("stats", {})
+    if stats:
         lines.append("## 📊 검색 통계")
         lines.append("")
-        lines.append(f"- **검색된 공모전 수:** {len(contexts)}개")
-        avg_score = sum(float(c.get('score', 0)) for c in contexts) / len(contexts) if contexts else 0
-        lines.append(f"- **평균 매칭도:** {avg_score*100:.1f}%")
+        lines.append(f"- **검색된 공모전 수:** {stats.get('total_results', 0)}개")
+        lines.append(f"- **평균 매칭도:** {stats.get('avg_score', 0.0)*100:.1f}%")
+        lines.append(f"- **검색 방식:** {stats.get('search_method','-')}")
         lines.append("")
 
     return "\n".join(lines)

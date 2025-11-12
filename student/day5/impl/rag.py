@@ -34,13 +34,19 @@ def _gate(contexts: List[Dict[str, Any]], plan: Day5Plan) -> Dict[str, Any]:
         return {"status":"enough","top_score":top_score,"mean_topk":mean_topk}
     return {"status":"insufficient","top_score":top_score,"mean_topk":mean_topk}
 
-# ✅ _draft_answer 개선 (meta 기반)
 def _draft_answer(query: str, contexts: List[Dict[str, Any]], plan: Day5Plan) -> str:
+    """
+    모든 검색결과의 공모전 메타데이터를 포함한 초안 생성
+    """
     if not contexts:
-        return ""
+        return "검색 결과가 없습니다."
 
     lines = []
-    for i, c in enumerate(contexts[:3], 1):
+    lines.append(f"🔎 '{query}' 검색 결과 {len(contexts)}개의 공모전을 찾았습니다.\n")
+    lines.append("📋 전체 공모전 목록:\n")
+
+    for i, c in enumerate(contexts, 1):
+        # 메타 필드 가져오기
         f = (c.get("meta", {}).get("fields")) or {}
         if not f and isinstance(c.get("text"), str):
             try:
@@ -53,17 +59,34 @@ def _draft_answer(query: str, contexts: List[Dict[str, Any]], plan: Day5Plan) ->
         field = f.get("분야", "-")
         prize = f.get("상금(단위: 만 원)", "미정")
         deadline = f.get("마감일", "-")
-        desc = f.get("상세 내용", "").strip()
+        eligibility = f.get("참가 자격", "-")
+        team_size = f.get("팀 규모", "-")
+        preferred_major = f.get("전공 우대", "-")
+        desc = (f.get("상세 내용", "") or "").strip()
         score = c.get("score", 0)
 
+        # 상세 내용 일부만 (너무 길면 200자 제한)
+        if len(desc) > 200:
+            desc = desc[:200] + "…"
+
         lines.append(
-            f"{i}. {title} ({field}) — {host}\n"
-            f"   🏆 상금: {prize}만 원 / 마감: {deadline}\n"
-            f"   💬 {desc}\n"
-            f"   🔹 매칭도: {score*100:.1f}%\n"
+            f"{i}. **{title}** ({field}) — {host}\n"
+            f"   🏆 **상금:** {prize}만 원 | 🗓 **마감:** {deadline}\n"
+            f"   👥 **참가 자격:** {eligibility} | 👤 **팀 규모:** {team_size}\n"
+            f"   🎓 **전공 우대:** {preferred_major}\n"
+            f"   💬 **상세 내용:** {desc}\n"
+            f"   🔹 **매칭도:** {score*100:.1f}%\n"
         )
 
-    return f"🔎 '{query}' 검색 결과 {len(contexts)}개 공모전을 찾았습니다.\n\n📌 추천 TOP 3 공모전:\n" + "\n".join(lines)
+    # 전체 평균/TopK 정보
+    top_score = float(contexts[0].get("score", 0.0))
+    mean_score = float(np.mean([c.get("score", 0.0) for c in contexts[:plan.top_k]]))
+    lines.append("\n📊 **검색 통계 요약**")
+    lines.append(f"- 상위 1개 매칭도: {top_score*100:.1f}%")
+    lines.append(f"- 상위 {plan.top_k} 평균 매칭도: {mean_score*100:.1f}%")
+
+    return "\n".join(lines)
+
 
 class Day5Agent:  # Day2Agent → Day5Agent
     def __init__(self, plan_defaults: Day5Plan = Day5Plan()):
