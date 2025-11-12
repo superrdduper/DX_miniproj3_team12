@@ -35,7 +35,7 @@ print("=" * 60)
 print("\n[1/4] 더미 공모전 데이터 생성...")
 from student.day5.impl.build_index import build_corpus
 
-corpus = build_corpus(num_contests=10)
+corpus = build_corpus()
 print(f"✅ 생성 완료: {len(corpus)}개 공모전")
 print(f"   예시: {corpus[0]['text'][:100]}...")
 

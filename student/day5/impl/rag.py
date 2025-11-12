@@ -34,35 +34,36 @@ def _gate(contexts: List[Dict[str, Any]], plan: Day5Plan) -> Dict[str, Any]:
         return {"status":"enough","top_score":top_score,"mean_topk":mean_topk}
     return {"status":"insufficient","top_score":top_score,"mean_topk":mean_topk}
 
+# ✅ _draft_answer 개선 (meta 기반)
 def _draft_answer(query: str, contexts: List[Dict[str, Any]], plan: Day5Plan) -> str:
-    """공모전 추천 초안 생성"""
     if not contexts:
         return ""
-    
-    # 공모전 정보 추출 및 요약
-    buf, budget = [], plan.max_context
-    
-    # 상위 공모전 간단 요약
-    top_contests = []
-    for i, c in enumerate(contexts[:3], 1):  # 상위 3개만
-        chunk = c.get("chunk", c.get("text", "")).strip()
-        
-        # 공모전명 추출 시도
-        import re
-        title_match = re.search(r'\[공모전명\]:\s*(.+?)(?=\n\[|$)', chunk, re.DOTALL)
-        title = title_match.group(1).strip() if title_match else f"공모전 #{i}"
-        
+
+    lines = []
+    for i, c in enumerate(contexts[:3], 1):
+        f = (c.get("meta", {}).get("fields")) or {}
+        if not f and isinstance(c.get("text"), str):
+            try:
+                f = json.loads(c["text"])
+            except Exception:
+                f = {}
+
+        title = f.get("공모전명", f"공모전 #{i}")
+        host = f.get("주최", "주최 미상")
+        field = f.get("분야", "-")
+        prize = f.get("상금(단위: 만 원)", "미정")
+        deadline = f.get("마감일", "-")
+        desc = f.get("상세 내용", "").strip()
         score = c.get("score", 0)
-        top_contests.append(f"{i}. {title} (매칭도: {score*100:.1f}%)")
-        
-        budget -= len(title)
-        if budget <= 0:
-            break
-    
-    summary = f"'{query}' 검색 결과 {len(contexts)}개 공모전을 찾았습니다.\n\n"
-    summary += "추천 공모전:\n" + "\n".join(top_contests)
-    
-    return summary
+
+        lines.append(
+            f"{i}. {title} ({field}) — {host}\n"
+            f"   🏆 상금: {prize}만 원 / 마감: {deadline}\n"
+            f"   💬 {desc}\n"
+            f"   🔹 매칭도: {score*100:.1f}%\n"
+        )
+
+    return f"🔎 '{query}' 검색 결과 {len(contexts)}개 공모전을 찾았습니다.\n\n📌 추천 TOP 3 공모전:\n" + "\n".join(lines)
 
 class Day5Agent:  # Day2Agent → Day5Agent
     def __init__(self, plan_defaults: Day5Plan = Day5Plan()):

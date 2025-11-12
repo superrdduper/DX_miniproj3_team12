@@ -6,44 +6,45 @@ Day2 인덱싱 엔트리포인트
 
 import os, argparse, numpy as np
 from typing import List
+import pandas as pd
+import time
 
-from student.day5.impl.ingest import build_corpus, save_docs_jsonl
-from student.day5.impl.embeddings import Embeddings
-from student.day5.impl.store import FaissStore  # 제공됨
+from ingest import build_corpus, save_docs_jsonl
+from embeddings import Embeddings
+from store import FaissStore
 
 
 def build_index(paths: List[str], index_dir: str, model: str | None = None, batch_size: int = 128):
-    """
-    절차:
-      1) corpus = build_corpus(paths)
-         - [{"id":..., "text":..., "meta":{...}}, ...]
-      2) texts = [item["text"] for item in corpus]
-      3) emb = Embeddings(model=model, batch_size=batch_size)
-         vecs = emb.encode(texts)  # (N, D) L2 정규화된 np.ndarray
-      4) index_path = os.path.join(index_dir, "faiss.index")
-         docs_path  = os.path.join(index_dir, "docs.jsonl")
-      5) store = FaissStore(dim=vecs.shape[1], index_path=index_path, docs_path=docs_path)
-         store.add(vecs, corpus); store.save()
-      6) save_docs_jsonl(corpus, docs_path)
-    """
-    # ----------------------------------------------------------------------------
-    # TODO[DAY2-I-01] 구현 지침
-    #  - corpus = build_corpus(paths)
-    #  - texts = [...]
-    #  - emb = Embeddings(model, batch_size)
-    #  - vecs = emb.encode(texts)
-    #  - os.makedirs(index_dir, exist_ok=True)
-    #  - store = FaissStore(...); store.add(...); store.save()
-    #  - save_docs_jsonl(corpus, docs_path)
-    # ----------------------------------------------------------------------------
+    print("🚀 [START] 인덱싱 파이프라인 시작")
+
     corpus = build_corpus(paths)
     if len(corpus) == 0:
-      raise ValueError("인덱싱할 문서가 없습니다.")
+        raise ValueError("❌ 인덱싱할 문서가 없습니다.")
 
     texts = [item["text"] for item in corpus]
+    print(f"📄 총 문서 수: {len(texts)}개")
 
     emb = Embeddings(model=model, batch_size=batch_size)
-    vecs = emb.encode(texts)
+    print(f"🧠 임베딩 모델: {model or '기본값'}")
+
+    # ⚙️ 임베딩 + 내용 확인
+    vecs_list = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
+
+        # ✅ 디버그: 각 문서 내용 일부 출력
+        print(f"\n=== 🔹 Batch {i // batch_size + 1} / {len(texts) // batch_size + 1} ===")
+        for j, t in enumerate(batch):
+            # 너무 길면 앞부분만 보기 (100자 제한)
+            snippet = (t[:120] + " ...") if len(t) > 120 else t
+            print(f"📝 [Doc {i + j}] {snippet}")
+
+        vecs_batch = emb.encode(batch)
+        vecs_list.append(vecs_batch)
+        print(f"✅ Batch {i + len(batch)}/{len(texts)} 임베딩 완료")
+
+    vecs = np.vstack(vecs_list)
+    print(f"✅ 전체 임베딩 완료! (shape={vecs.shape})")
 
     os.makedirs(index_dir, exist_ok=True)
     index_path = os.path.join(index_dir, "faiss.index")
@@ -54,7 +55,9 @@ def build_index(paths: List[str], index_dir: str, model: str | None = None, batc
     store.save()
 
     save_docs_jsonl(corpus, docs_path)
-   
+    print(f"\n💾 인덱스 및 문서 저장 완료: {index_dir}")
+
+
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
@@ -64,11 +67,6 @@ if __name__ == "__main__":
     ap.add_argument("--batch_size", type=int, default=128)
     args = ap.parse_args()
 
-    # ----------------------------------------------------------------------------
-    # TODO[DAY2-I-02] 구현 지침
-    #  - os.makedirs(args.index_dir, exist_ok=True)
-    #  - build_index(args.paths, args.index_dir, args.model, args.batch_size)
-    # ----------------------------------------------------------------------------
     os.makedirs(args.index_dir, exist_ok=True)
 
     build_index(
@@ -77,5 +75,3 @@ if __name__ == "__main__":
         model=args.model,
         batch_size=args.batch_size,
     )
-
-    print(f"✅ 인덱싱 완료! 저장 경로: {args.index_dir}")
